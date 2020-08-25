@@ -23,6 +23,8 @@ ELEVATOR_FEED_DIR = 1
 NUDGER_ENGAGE_SIGNAL = 'm8'
 NUDGER_DISENGAGE_SIGNAL = 'm9'
 
+SERIAL_PORT = "/dev/ttyACM0" #"/dev/cu.usbmodem14201"
+
 def run_test():
     """
     """
@@ -73,7 +75,7 @@ def run_test():
 def initialize():
     """
     """
-    sar_serial = serial.Serial('/dev/cu.usbmodem14201',115200)
+    sar_serial = serial.Serial(SERIAL_PORT,115200)
     # Wake up grbl
     sar_serial.write(str.encode("\r\n\r\n"))
     time.sleep(2)   # Wait for grbl to initialize
@@ -160,7 +162,7 @@ if __name__ == '__main__':
     s = initialize()
     # ipdb.set_trace()
     # test_nudger(s)
-    move_sheets(s, sheet_count=10)
+    move_sheets(s, sheet_count=2)
     # move_elevator(s)
     # execute_sar_command(s, 'g1{}{}'.format(NUDGER_AXIS, 10))
     # test_nudger(n)
