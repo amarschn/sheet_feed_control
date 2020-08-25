@@ -8,8 +8,8 @@ To lock the motors when they are not moving: $1=255
 
 import serial
 import time
-# import datetime
-# import csv
+import datetime
+import json
 
 
 NUDGER_AXIS = 'y'
@@ -23,16 +23,51 @@ ELEVATOR_FEED_DIR = 1
 NUDGER_ENGAGE_SIGNAL = 'm8'
 NUDGER_DISENGAGE_SIGNAL = 'm9'
 
-# def run_test():
-#     """
-#     """
-#     test_base_name = datetime.datetime.now().strfime("%Y-%m-%d_%H:%M:%S")
-#     csv_file = test_base_name + ".csv"
-#     txt_file = test_base_name + ".txt"
-#     with open(txt_file, 'w') as test_file:
-#         sheet_type = input("Select '1' for Carbon Fiber sheets or '2' for Fiberglass sheets...")
-#         if sheet_type is '1':
-#             test_file.write()
+def run_test():
+    """
+    """
+
+    test_data = {}
+
+    # Record date
+    date_string = datetime.datetime.now().strfime("%Y-%m-%d_%H:%M:%S")
+    test_data['date'] = date_string
+
+    # Collect sheet type
+    sheet_type = input("Select '1' for Carbon Fiber sheets or '2' for Fiberglass sheets...")
+    if sheet_type is '1':
+        test_data['sheet_type'] = 'Carbon Fiber'
+    elif sheet_type is '2':
+        test_data['sheet_type'] = 'Fiberglass'
+    else:
+        test_data['sheet_type'] = 'Unknown'
+
+    # Collect sheet-to-sheet friction average over some number of samples
+    sheet_sheet_friction_average = 0
+
+    # Collect desired number of sheets to be fed through the machine.
+    # Option for "continuous" mode is default
+    number_of_sheets_to_feed = 0
+
+    # Collect number of sheets in elevator
+    number_of_sheets_in_elevator = 0
+
+    # Collect retard clutch torque value
+    retard_clutch_value = 0
+
+    # Record all configuration settings
+    nudger_distance = 0
+    nudger_speed = 0
+    feed_distance = 0
+    feed_speed = 0
+    takeaway_distance = 0
+    takeaway_speed = 0
+    elevator_distance = 0
+
+    # Collect any extra notes (sheet processing conditions, strange events, manual changes, etc.)
+    notes = 0
+    
+    test_file = date_string + ".json"
 
 
 def initialize():
@@ -77,7 +112,7 @@ def disengage_nudger(s):
 def move_elevator(s, elevator_distance = .04):
     execute_sar_command(s, 'g1{}{}'.format(ELEVATOR_AXIS, elevator_distance))
 
-def move_sheet(s, nudger_distance=1, feed_distance=1.75, takeaway_distance=4, elevator_distance=0.04, speed=200):
+def move_sheet(s, nudger_distance=1, feed_distance=1.75, takeaway_distance=4, elevator_distance=0.043, speed=200):
     """
     Movement in millimeters of the first drive (nudger + retard rolls)
     """
@@ -125,7 +160,7 @@ if __name__ == '__main__':
     s = initialize()
     # ipdb.set_trace()
     # test_nudger(s)
-    move_sheets(s, sheet_count=50)
+    move_sheets(s, sheet_count=10)
     # move_elevator(s)
     # execute_sar_command(s, 'g1{}{}'.format(NUDGER_AXIS, 10))
     # test_nudger(n)
