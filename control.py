@@ -20,10 +20,11 @@ NUDGER_FEED_DIR = 1
 TAKEAWAY_FEED_DIR = 1
 ELEVATOR_FEED_DIR = 1
 
-NUDGER_ENGAGE_SIGNAL = 'm8'
-NUDGER_DISENGAGE_SIGNAL = 'm9'
+NUDGER_ENGAGE_SIGNAL = 1
+NUDGER_DISENGAGE_SIGNAL = 0
 
-SERIAL_PORT = "/dev/ttyACM0" #"/dev/cu.usbmodem14201"
+MOTOR_SERIAL_PORT = "/dev/ttyACM1" #"/dev/cu.usbmodem14201"
+SENSOR_SERIAL_PORT = "/dev/ttyACM0"
 
 def run_test():
     """
@@ -72,10 +73,11 @@ def run_test():
     test_file = date_string + ".json"
 
 
-def initialize():
+def initialize_motor_serial():
     """
     """
-    sar_serial = serial.Serial(SERIAL_PORT,115200)
+    sar_serial = serial.Serial(MOTOR_SERIAL_PORT,115200)
+    
     # Wake up grbl
     sar_serial.write(str.encode("\r\n\r\n"))
     time.sleep(2)   # Wait for grbl to initialize
@@ -84,7 +86,10 @@ def initialize():
     execute_sar_command(sar_serial, '$1=0')
 
     return sar_serial
-
+    
+def initialize_sensor_serial():
+    sensor_serial = serial.Serial(SENSOR_SERIAL_PORT, 115200)
+    return sensor_serial
 
 def execute_sar_command(s, command):
     """
@@ -96,25 +101,53 @@ def execute_sar_command(s, command):
     # print("HI")
 
 def engage_nudger(s):
-    execute_sar_command(s, NUDGER_ENGAGE_SIGNAL)
-    # s.flushInput()
-    # s.write(str.encode(NUDGER_ENGAGE_SIGNAL+"\n"))
+    execute_sar_command(s, 'm8')
+    #sensor_ser.flushInput()
+    #sensor_ser.write(NUDGER_ENGAGE_SIGNAL)
     # # grbl_out = s.readline()
     # # print(grbl_out)
-    # s.flushInput()
+    #sensor_ser.flushInput()
 
 def disengage_nudger(s):
-    execute_sar_command(s, NUDGER_DISENGAGE_SIGNAL)
-    # s.flushInput()
-    # s.write(str.encode(NUDGER_DISENGAGE_SIGNAL+"\n"))
+    execute_sar_command(s, 'm9')
+    #sensor_ser.flushInput()
+    # sensor_ser.write(NUDGER_DISENGAGE_SIGNAL)
     # grbl_out = s.readline()
     # print(grbl_out)
-    # s.flushInput()
+    # sensor_ser.flushInput()
 
-def move_elevator(s, elevator_distance = .04):
+def nudger_too_low(sensor_ser):
+    """Read nudger sensor
+    """
+    try:
+        sensor_ser.flushInput()
+        nudger_sensor = int(sensor_ser.readline())
+        if nudger_sensor == 1:
+            return False
+        else:
+            return True
+    except ValueError:
+        print("Value Error")
+        return False
+    
+
+def check_nudger(sar_ser, sensor_ser, elevator_distance = 0.04):
+    """Determine if the nudger sensor is activated
+    If the nudger is activated, move the elevator up until it is not
+    """
+    elevator = ELEVATOR_FEED_DIR*elevator_distance
+    upward_moves = 0
+    while (nudger_too_low(sensor_ser) is True and upward_moves < 20):
+        print("Nudger is too low, moving up #{}".format(upward_moves))
+        time.sleep(0.1)
+        execute_sar_command(sar_ser, "g1{}{}".format(ELEVATOR_AXIS, elevator))
+        upward_moves+=1
+
+
+def move_elevator(s, elevator_distance = 0.04):
     execute_sar_command(s, 'g1{}{}'.format(ELEVATOR_AXIS, elevator_distance))
 
-def move_sheet(s, nudger_distance=1, feed_distance=1.75, takeaway_distance=4, elevator_distance=0.043, speed=200):
+def move_sheet(sar_ser, sensor_ser, nudger_distance=1, feed_distance=1.75, takeaway_distance=4, elevator_distance=0.043, speed=200):
     """
     Movement in millimeters of the first drive (nudger + retard rolls)
     """
@@ -122,31 +155,37 @@ def move_sheet(s, nudger_distance=1, feed_distance=1.75, takeaway_distance=4, el
     feed = NUDGER_FEED_DIR*feed_distance
     takeaway = TAKEAWAY_FEED_DIR*takeaway_distance
     elevator = ELEVATOR_FEED_DIR*elevator_distance
-    execute_sar_command(s, 'f{}'.format(speed))
+    execute_sar_command(sar_ser, 'f{}'.format(speed))
+    
     print("Nudge Operation")
-    engage_nudger(s)
+    engage_nudger(sar_ser)
+    
+    print("Checking Nudger")
+    time.sleep(1.0)
+    check_nudger(sar_ser, sensor_ser)
+    
     # _ = input("Press Enter to continue...")
-    execute_sar_command(s, 'g1{}{}{}{}'.format(NUDGER_AXIS, nudge,TAKEAWAY_AXIS, nudge))
+    execute_sar_command(sar_ser, 'g1{}{}{}{}'.format(NUDGER_AXIS, nudge,TAKEAWAY_AXIS, nudge))
     time.sleep(1)
     _ = input("Press Enter to continue...")
     print("Feed + Takeaway Operation")
-    disengage_nudger(s)
-    execute_sar_command(s, 'g1{}{}{}{}'.format(NUDGER_AXIS, feed, TAKEAWAY_AXIS, feed))
-    execute_sar_command(s, 'g1{}{}'.format(TAKEAWAY_AXIS, takeaway))
-    execute_sar_command(s, 'g1{}{}'.format(ELEVATOR_AXIS, elevator))
+    disengage_nudger(sar_ser)
+    execute_sar_command(sar_ser, 'g1{}{}{}{}'.format(NUDGER_AXIS, feed, TAKEAWAY_AXIS, feed))
+    execute_sar_command(sar_ser, 'g1{}{}'.format(TAKEAWAY_AXIS, takeaway))
+    execute_sar_command(sar_ser, 'g1{}{}'.format(ELEVATOR_AXIS, elevator))
 
     time.sleep(2)
     result = input("Press 1 if success, 2 if double pick, 3 if mis-pick, 4 if sheet damage...")
     return result
     
 
-def move_sheets(s, sheet_count=1):
+def move_sheets(sar_ser, sensor_ser, sheet_count=1):
     """
     """
     results = []
     for i in range(sheet_count):
         print("Feeding sheet #{}".format(i))
-        result = move_sheet(s)
+        result = move_sheet(sar_ser, sensor_ser)
         results.append(result)
     print(results)
 
@@ -159,12 +198,15 @@ def test_nudger(s):
         time.sleep(wait_time)
 
 if __name__ == '__main__':
-    s = initialize()
-    # ipdb.set_trace()
+    sar_ser = initialize_motor_serial()
+    sensor_ser = initialize_sensor_serial()
+    #check_nudger(sar_ser, sensor_ser)
+    #test_nudger(sar_ser)
+    #ipdb.set_trace()
     # test_nudger(s)
-    move_sheets(s, sheet_count=2)
+    move_sheets(sar_ser, sensor_ser, sheet_count=2)
     # move_elevator(s)
     # execute_sar_command(s, 'g1{}{}'.format(NUDGER_AXIS, 10))
     # test_nudger(n)
-    
-    s.close()
+    sar_ser.close()
+    sensor_ser.close()
