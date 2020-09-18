@@ -17,6 +17,7 @@ import time
 import datetime
 import json
 import os
+import sys
 
 default_config = {
     "TEST_RESULTS_DIRECTORY": 'results',
@@ -25,8 +26,8 @@ default_config = {
     "ELEVATOR_AXIS": 'x',
     "NUDGER_ENGAGE_SIGNAL": 1,
     "NUDGER_DISENGAGE_SIGNAL": 0,
-    "MOTOR_SERIAL_PORT": "/dev/ttyACM1",
-    "SENSOR_SERIAL_PORT": "/dev/ttyACM0",
+    "MOTOR_SERIAL_PORT": "/dev/ttyACM0",
+    "SENSOR_SERIAL_PORT": "/dev/ttyACM1",
     "ELEVATOR_FEED_DISTANCE": 0.043,
     "NUDGER_FEED_DISTANCE": 1,
     "FEEDER_FEED_DISTANCE": 1.75,
@@ -48,16 +49,24 @@ class SAR(object):
 
         # Make test results directory if it does not exist
         if not os.path.exists(self.config["TEST_RESULTS_DIRECTORY"]):
-            os.makedir(self.config["TEST_RESULTS_DIRECTORY"])
-
+            os.mkdir(self.config["TEST_RESULTS_DIRECTORY"])
+    
+    def initialize_serial(self):
+        """Initialize serial connections"""
+        self.initialize_motor_serial()
+        self.initialize_sensor_serial()
+    
     def initialize_motor_serial(self):
         """Initialize the serial connection the gshield."""
-        self.motor_serial = serial.Serial(
-            self.config["MOTOR_SERIAL_PORT"], 115200)
+        try:
+            self.motor_serial = serial.Serial(self.config["MOTOR_SERIAL_PORT"], 115200)
+        except serial.SerialException:
+            print("Motor arduino unable to connect.")
+            self.shut_down()
         # Wake up grbl
         self.motor_serial.write(str.encode("\r\n\r\n"))
         time.sleep(2)   # Wait for grbl to initialize
-        self.execute_gshield_command(self.motor_serial, 'g91')
+        self.execute_gshield_command('g91')
         self.motor_lock(False)
         self.execute_gshield_command('f{}'.format(self.config["MOTOR_SPEED"]))
 
@@ -70,6 +79,7 @@ class SAR(object):
         if self.test_file is not None and self.test_data is not None:
             with open(self.test_file, 'w') as f:
                 json.dump(self.test_data, f)
+        sys.exit()
 
     def motor_lock(self, val=False):
         """Lock the motors when not in use if True."""
@@ -77,13 +87,16 @@ class SAR(object):
             command = 255
         else:
             command = 0
-        self.execute_gshield_command(
-            self.motor_serial, '$1={}'.format(command))
+        self.execute_gshield_command('$1={}'.format(command))
 
     def initialize_sensor_serial(self):
         """Initialize the serial connection with the sensor arduino board."""
-        self.sensor_serial = serial.Serial(
-            self.config["SENSOR_SERIAL_PORT"], 115200)
+        try:
+            self.sensor_serial = serial.Serial(
+                self.config["SENSOR_SERIAL_PORT"], 115200)
+        except serial.SerialException:
+            print("Sensor arduino unable to connect.")
+            self.shut_down()
 
     def execute_gshield_command(self, command):
         """Execute a motor command on the gshield board."""
@@ -141,14 +154,15 @@ class SAR(object):
 
     def nudge(self):
         """Acquire a sheet onto the feed roll."""
-        axis = self.config["NUDGER_AXIS"]
+        n_axis = self.config["NUDGER_AXIS"]
+        t_axis = self.config["TAKEAWAY_AXIS"]
         feed = self.config["NUDGER_FEED_DISTANCE"]
         print("Nudge Operation...")
         self.engage_nudger()
         print("Checking Nudger...")
         time.sleep(1.0)
         self.check_nudger()
-        self.execute_gshield_command('g1{}{}{}{}'.format(axis, feed))
+        self.execute_gshield_command('g1{}{}{}{}'.format(n_axis, feed, t_axis, feed))
 
     def feed_takeaway(self):
         """Move a sheet through the feed + takeaway."""
@@ -172,6 +186,10 @@ class SAR(object):
         input("Press Enter to continue...")
         print("Feed + Takeaway Operation")
         self.feed_takeaway()
+    
+    def get_previous_user_entry(self):
+        """Get previous user entry data."""
+        return {}
 
     def collect_user_entry_data(self):
         """Collect user data about non-sensed test parameters."""
@@ -183,18 +201,16 @@ class SAR(object):
             # If this is the same as most previous test allow for copying of
             # all data
             use_previous = input(
-                "If all settings are the same as the most previous test press 0\
-                , if not press any key...")
+                "If all settings are the same as the most previous test press 0, if not press any key...")
             if use_previous is '0':
-                self.get_previous_data_config()
+                self.get_previous_user_entry()
                 return
 
             entry = {}
 
             # Collect sheet type (CF or GF)
             sheet_type = input(
-                "Select '1' for Carbon Fiber sheets or '2' for \
-                Fiberglass sheets...")
+                "Select '1' for Carbon Fiber sheets or '2' for Fiberglass sheets...")
             if sheet_type is '1':
                 entry['sheet_type'] = 'Carbon Fiber'
             elif sheet_type is '2':
@@ -206,27 +222,22 @@ class SAR(object):
             entry['sheet_gsm'] = input("Enter GSM value of sheet...")
 
             # Collect pull-off test average required normal force
-            entry['pull_off_normal_force'] = input("Enter the average normal\
-                    force used in a pull-off test of 10 sheets...")
-
-            # Collect desired number of sheets to be fed through the machine.
-            # Option for "continuous" mode is default
-            entry['number_of_sheets_to_feed'] = input("Enter the number of\
-                sheets to feed in this test or press Enter for continuous \
-                feed mode...")
-
+            entry['pull_off_normal_force'] = input("Enter the max pull-off force result from performing the pull-off test of 10 sheets...")
+            
             # Collect number of sheets in elevator
-            entry['number_of_sheets_in_elevator'] = input("Enter the approximate number\
-                 of sheets in the elevator...")
+            entry['number_of_sheets_in_elevator'] = input("Enter the approximate number of sheets in the elevator...")
 
             # Collect retard clutch torque value
-            entry['retard_clutch_value'] = input("Enter the retard clutch torque \
-                setting...")
+            entry['retard_clutch_value'] = input("Enter the retard clutch torque setting...")
 
             # Collect retard roll spring value
-            entry['retard_spring_compression'] = input("Enter the screw distance for the \
-                spring drive screws...")
+            entry['retard_spring_compression'] = input("Enter the screw distance (mm) for the spring drive screws...")
+            
+            # Collect desired number of sheets to be fed through the machine.
+            # Option for "continuous" mode is default
+            entry['number_of_sheets_to_feed'] = input("Enter the number of sheets to feed in this test or press Enter for continuous feed mode...")
 
+            
             # Record entry data in test data dict
             self.test_data['user_entry_data'] = entry
 
@@ -238,8 +249,7 @@ class SAR(object):
             print("Feeding sheet #{}".format(sheet_number))
             self.move_sheet()
             sheet_number += 1
-            results[sheet_number] = input("Press 1 if success, 2 if double pick, 3 if mis-pick, \
-                4 if sheet damage, 0 if the test is complete...")
+            results[sheet_number] = input("Press 1 if success, 2 if multifeed, 3 if misfeed, 4 if sheet damage, 0 if the test is complete...")
             if results[sheet_number] == '0':
                 break
             if not continuous:
@@ -248,12 +258,16 @@ class SAR(object):
 
     def run_test(self):
         """Execute a test run with full data collection."""
+        self.initialize_motor_serial()
+        self.initialize_sensor_serial()
+        
+        
         self.test_data = {}
 
         # Record date
-        date_string = datetime.datetime.now().strfime("%Y-%m-%d_%H:%M:%S")
+        date_string = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
         self.test_data['date'] = date_string
-        self.test_file = date_string + ".json"
+        self.test_file = os.path.join(self.config["TEST_RESULTS_DIRECTORY"], date_string + ".json")
         self.collect_user_entry_data()
 
         # Record all configuration settings
@@ -269,8 +283,11 @@ class SAR(object):
             continuous = False
 
         # Feed sheets, collecting user input data for each sheet
-        self.test_data['sheet_data'] = self.feed_sheets(continuous, sheet_count)
-
+        try:
+            self.test_data['sheet_data'] = self.feed_sheets(continuous, sheet_count)
+        except Exception as e:
+            print(e)
+            self.shut_down()
         # Collect any extra notes (sheet processing conditions, strange events,
         # manual changes, etc.)
         notes = input("Write down any other notes, press Enter when done...")
@@ -278,8 +295,13 @@ class SAR(object):
 
         # Shut down communication and save data
         self.shut_down()
-
+    
+    def move_elevator(self, z=-5):
+        """Move the elevator stage down by some amount"""
+        self.execute_gshield_command("g1{}{}".format(self.config["ELEVATOR_AXIS"], z))
 
 if __name__ == '__main__':
     S = SAR(default_config)
     S.run_test()
+    #S.initialize_serial()
+    #S.move_elevator(-2)
