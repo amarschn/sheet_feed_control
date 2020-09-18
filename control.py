@@ -8,8 +8,11 @@ Notes:
 - Hi
 
 TODO:
-- Implement class for SAR fixture
-- Implement test run export functionality
+- Rewrite and move all timing based sheet control to arduino
+- Include performance % metrics in report
+- Add stubs for sensor,event,etc. values for each page
+- Add logging?
+- Add in configuration upload to arduino capability
 """
 
 import serial
