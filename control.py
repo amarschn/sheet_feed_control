@@ -43,9 +43,9 @@ class SAR(object):
     def initialize_serial(self):
         """Initialize serial connections."""
         try:
-            self.serial = serial.Serial(self.config["MOTOR_SERIAL_PORT"], 115200)
+            self.serial = serial.Serial(self.config["SERIAL_PORT"], 115200)
         except serial.SerialException:
-            print("Motor arduino unable to connect.")
+            print("Arduino unable to connect. Exiting...\n")
             self.shut_down()
 
     def shut_down(self):
@@ -138,7 +138,7 @@ class SAR(object):
         self.test_data = {}
 
         # Record date
-        date_string = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        date_string = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         self.test_data['date'] = date_string
         self.test_file = os.path.join(self.config["TEST_RESULTS_DIRECTORY"], date_string + ".json")
         self.collect_user_entry_data()
@@ -167,10 +167,10 @@ class SAR(object):
         # doesn't matter for these sheet feed numbers.
         collated_results = list(self.test_data['sheet_data'].values())
         self.test_data['total_sheets_fed'] = len(collated_results)
-        self.test_data['percentage_successful'] = collated_results.count('1')
-        self.test_data['percentage_multifeed'] = collated_results.count('2')
-        self.test_data['percentage_misfeed'] = collated_results.count('3')
-        self.test_data['percentage_sheet_damage'] = collated_results.count('4')
+        self.test_data['percentage_successful'] = collated_results.count('1') / self.test_data['total_sheets_fed']
+        self.test_data['percentage_multifeed'] = collated_results.count('2') / self.test_data['total_sheets_fed']
+        self.test_data['percentage_misfeed'] = collated_results.count('3') / self.test_data['total_sheets_fed']
+        self.test_data['percentage_sheet_damage'] = collated_results.count('4') / self.test_data['total_sheets_fed']
 
         # Collect any extra notes (sheet processing conditions, strange events,
         # manual changes, etc.)

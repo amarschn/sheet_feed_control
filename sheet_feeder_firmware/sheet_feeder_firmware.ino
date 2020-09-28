@@ -26,7 +26,7 @@ const float elevator_feed_distance = 0.043;
 const float nudger_feed_distance = 0.35;
 const float feeder_feed_distance = 1.75;
 const float takeaway_feed_distance = 4;
-const float motor_speed = 200;
+const float motor_speed = 150;
 const float max_raised_distance = 10.;
 const bool motor_lock = false;
 
@@ -85,11 +85,12 @@ void setup_grbl() {
    * Set up grbl with the configuration parameters
    */
   // Define all speed and movement strings according to configuration variables
-  elevator_feed_command = String(String(elevator_axis) + String(elevator_feed_distance));
-  nudger_feed_command = String(String(nudger_axis) + String(nudger_feed_distance));
-  feeder_feed_command = String(String(nudger_axis) + String(feeder_feed_distance) + String(takeaway_axis) + String(feeder_feed_distance));
-  takeaway_feed_command = String(String(takeaway_axis) + String(takeaway_feed_distance));
   motor_speed_command = String("F" + String(motor_speed));
+  elevator_feed_command = String("G1" + String(elevator_axis) + String(elevator_feed_distance));
+  nudger_feed_command = String("G1" + String(nudger_axis) + String(nudger_feed_distance));
+  feeder_feed_command = String("G1" + String(nudger_axis) + String(feeder_feed_distance) + String(takeaway_axis) + String(feeder_feed_distance));
+  takeaway_feed_command = String("G1" + String(takeaway_axis) + String(takeaway_feed_distance));
+  
   
   // Check whether or not to lock the motors when not running - probably only useful for FAR
   if (motor_lock) {
@@ -97,12 +98,13 @@ void setup_grbl() {
   } else {
     Serial1.println("$1=0");
   }
-
+  delay(300);
   // Set feeder into relative mode
   Serial1.println("G91");
-  
+  delay(300);
   // Set motor speed
   Serial1.println(motor_speed_command);
+  delay(300);
 }
 
 String read_grbl() {
