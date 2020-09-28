@@ -4,38 +4,25 @@ Description: Module for use in controlling the SAR test fixture.
 Author: Drew Marschner
 Date: 8/2/2020
 
-Notes:
-- Hi
 
 TODO:
-- Rewrite and move all timing based sheet control to arduino
 - Include performance % metrics in report
 - Add stubs for sensor,event,etc. values for each page
 - Add logging?
 - Add in configuration upload to arduino capability
 """
 
-import serial
-import time
 import datetime
 import json
 import os
 import sys
 
+import serial
+
+
 default_config = {
     "TEST_RESULTS_DIRECTORY": 'results',
-    "NUDGER_AXIS": 'y',
-    "TAKEAWAY_AXIS": 'z',
-    "ELEVATOR_AXIS": 'x',
-    "NUDGER_ENGAGE_SIGNAL": 1,
-    "NUDGER_DISENGAGE_SIGNAL": 0,
-    "MOTOR_SERIAL_PORT": "/dev/ttyACM0",
-    "SENSOR_SERIAL_PORT": "/dev/ttyACM1",
-    "ELEVATOR_FEED_DISTANCE": 0.043,
-    "NUDGER_FEED_DISTANCE": 1,
-    "FEEDER_FEED_DISTANCE": 1.75,
-    "TAKEAWAY_FEED_DISTANCE": 4,
-    "MOTOR_SPEED": 200
+    "SERIAL_PORT": "/dev/ttyACM0",
 }
 
 
@@ -45,151 +32,38 @@ class SAR(object):
     def __init__(self, config):
         """Initialize SAR object with config."""
         self.config = config
-        self.motor_serial = None
-        self.sensor_serial = None
+        self.serial = None
         self.test_file = None
         self.test_data = None
 
         # Make test results directory if it does not exist
         if not os.path.exists(self.config["TEST_RESULTS_DIRECTORY"]):
             os.mkdir(self.config["TEST_RESULTS_DIRECTORY"])
-    
+
     def initialize_serial(self):
         """Initialize serial connections"""
-        self.initialize_motor_serial()
-        self.initialize_sensor_serial()
-    
-    def initialize_motor_serial(self):
-        """Initialize the serial connection the gshield."""
         try:
-            self.motor_serial = serial.Serial(self.config["MOTOR_SERIAL_PORT"], 115200)
+            self.serial = serial.Serial(self.config["MOTOR_SERIAL_PORT"], 115200)
         except serial.SerialException:
             print("Motor arduino unable to connect.")
             self.shut_down()
-        # Wake up grbl
-        self.motor_serial.write(str.encode("\r\n\r\n"))
-        time.sleep(2)   # Wait for grbl to initialize
-        self.execute_gshield_command('g91')
-        self.motor_lock(False)
-        self.execute_gshield_command('f{}'.format(self.config["MOTOR_SPEED"]))
 
     def shut_down(self):
         """Shut down the connection to the test fixture and save test data."""
-        if self.motor_serial is not None:
-            self.motor_serial.close()
-        if self.sensor_serial is not None:
-            self.sensor_serial.close()
+        if self.serial is not None:
+            self.serial.close()
         if self.test_file is not None and self.test_data is not None:
             with open(self.test_file, 'w') as f:
                 json.dump(self.test_data, f)
         sys.exit()
 
-    def motor_lock(self, val=False):
-        """Lock the motors when not in use if True."""
-        if val:
-            command = 255
-        else:
-            command = 0
-        self.execute_gshield_command('$1={}'.format(command))
-
-    def initialize_sensor_serial(self):
-        """Initialize the serial connection with the sensor arduino board."""
-        try:
-            self.sensor_serial = serial.Serial(
-                self.config["SENSOR_SERIAL_PORT"], 115200)
-        except serial.SerialException:
-            print("Sensor arduino unable to connect.")
-            self.shut_down()
-
-    def execute_gshield_command(self, command):
-        """Execute a motor command on the gshield board."""
-        self.motor_serial.flushInput()  # Flush startup text in serial input
-        command_string = '{}\n'.format(command.strip())
-        self.motor_serial.write(str.encode(command_string))
-        return self.motor_serial.readline()
-
-    def engage_nudger(self):
-        """Engage the nudger servo."""
-        self.execute_gshield_command('m8')
-
-    def disengage_nudger(self):
-        """Disengage the nudger servo."""
-        self.execute_gshield_command('m9')
-
-    def nudger_too_low(self):
-        """Read nudger switch value.
-
-        Returns True if the switch is depressed and false if not.
-        """
-        try:
-            self.sensor_serial.flushInput()
-            nudger_sensor = int(self.sensor_serial.readline())
-            if nudger_sensor == 1:
-                return False
-            else:
-                return True
-        except ValueError:
-            print("Value Error")
-            return False
-
-    def check_nudger(self):
-        """Determine if the nudger sensor is activated.
-
-        If the nudger is activated, move the elevator up until it is not
-        """
-        elevator = self.config["ELEVATOR_FEED_DISTANCE"]
-        upward_moves = 0
-
-        while (self.nudger_too_low() is True and upward_moves < 20):
-            print("Nudger is too low, moving up #{}".format(upward_moves))
-            time.sleep(0.1)
-            self.execute_gshield_command(
-                "g1{}{}".format(self.config["ELEVATOR_AXIS"], elevator))
-            upward_moves += 1
-
-    def test_nudger(self, up_downs=5, delay_time=1.0):
-        """Test nudger up and down."""
-        for i in range(up_downs):
-            self.engage_nudger()
-            time.sleep(delay_time)
-            self.disengage_nudger()
-            time.sleep(delay_time)
-
-    def nudge(self):
-        """Acquire a sheet onto the feed roll."""
-        n_axis = self.config["NUDGER_AXIS"]
-        t_axis = self.config["TAKEAWAY_AXIS"]
-        feed = self.config["NUDGER_FEED_DISTANCE"]
-        print("Nudge Operation...")
-        self.engage_nudger()
-        print("Checking Nudger...")
-        time.sleep(1.0)
-        self.check_nudger()
-        self.execute_gshield_command('g1{}{}{}{}'.format(n_axis, feed, t_axis, feed))
-
-    def feed_takeaway(self):
-        """Move a sheet through the feed + takeaway."""
-        n_axis = self.config["NUDGER_AXIS"]
-        t_axis = self.config["TAKEAWAY_AXIS"]
-        e_axis = self.config["ELEVATOR_AXIS"]
-        f1 = self.config["FEEDER_FEED_DISTANCE"]
-        f2 = self.config["TAKEAWAY_FEED_DISTANCE"]
-        f3 = self.config["ELEVATOR_FEED_DISTANCE"]
-        self.disengage_nudger()
-        self.execute_gshield_command('g1{}{}{}{}'.format(n_axis, f1, t_axis, f1))
-        self.execute_gshield_command('g1{}{}'.format(t_axis, f2))
-        # Raise the elevator for the next sheet
-        self.execute_gshield_command('g1{}{}'.format(e_axis, f3))
-        time.sleep(1)
-
     def move_sheet(self):
         """Move a sheet through the SAR feeder."""
-        self.nudge()
-        time.sleep(1)
-        input("Press Enter to continue...")
-        print("Feed + Takeaway Operation")
-        self.feed_takeaway()
-    
+        self.serial.flushInput()
+        command_string = "1\n"
+        self.serial.write(str.encode(command_string))
+        return self.serial.readline()
+
     def get_previous_user_entry(self):
         """Get previous user entry data."""
         return {}
@@ -226,7 +100,7 @@ class SAR(object):
 
             # Collect pull-off test average required normal force
             entry['pull_off_normal_force'] = input("Enter the max pull-off force result from performing the pull-off test of 10 sheets...")
-            
+
             # Collect number of sheets in elevator
             entry['number_of_sheets_in_elevator'] = input("Enter the approximate number of sheets in the elevator...")
 
@@ -235,12 +109,11 @@ class SAR(object):
 
             # Collect retard roll spring value
             entry['retard_spring_compression'] = input("Enter the screw distance (mm) for the spring drive screws...")
-            
+
             # Collect desired number of sheets to be fed through the machine.
             # Option for "continuous" mode is default
             entry['number_of_sheets_to_feed'] = input("Enter the number of sheets to feed in this test or press Enter for continuous feed mode...")
 
-            
             # Record entry data in test data dict
             self.test_data['user_entry_data'] = entry
 
@@ -261,10 +134,7 @@ class SAR(object):
 
     def run_test(self):
         """Execute a test run with full data collection."""
-        self.initialize_motor_serial()
-        self.initialize_sensor_serial()
-        
-        
+        self.initialize_serial()
         self.test_data = {}
 
         # Record date
@@ -298,7 +168,7 @@ class SAR(object):
 
         # Shut down communication and save data
         self.shut_down()
-    
+
     def move_elevator(self, z=-5):
         """Move the elevator stage down by some amount"""
         self.execute_gshield_command("g1{}{}".format(self.config["ELEVATOR_AXIS"], z))
@@ -306,5 +176,3 @@ class SAR(object):
 if __name__ == '__main__':
     S = SAR(default_config)
     S.run_test()
-    #S.initialize_serial()
-    #S.move_elevator(-2)
