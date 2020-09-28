@@ -15,22 +15,25 @@
 #include <Servo.h>
 
 const int feed_sheet_command = '1';
+const int nudger_switch_up = 0;
+const int nudger_switch_down = 1;
 
 const char nudger_axis = 'y';
 const char takeaway_axis = 'z';
 const char elevator_axis = 'x';
 
 const float elevator_feed_distance = 0.043;
-const float nudger_feed_distance = 1.0;
+const float nudger_feed_distance = 0.35;
 const float feeder_feed_distance = 1.75;
 const float takeaway_feed_distance = 4;
 const float motor_speed = 200;
+const float max_raised_distance = 10.;
 const bool motor_lock = false;
 
 
 const int nudger_engage_pos = 134;
 const int nudger_retract_pos = 163;
-const int nudger_control_pin = 4;
+const int nudger_control_pin = 3;
 const int nudger_switch_pin = 2;
 
 enum nudger_direction { UP, DOWN };
@@ -58,6 +61,7 @@ void setup() {
     Serial.println("Retrying in 3 seconds...");
     delay(3000);
   };
+  setup_grbl();
 }
 
 bool connect_grbl() {
@@ -83,15 +87,15 @@ void setup_grbl() {
   // Define all speed and movement strings according to configuration variables
   elevator_feed_command = String(String(elevator_axis) + String(elevator_feed_distance));
   nudger_feed_command = String(String(nudger_axis) + String(nudger_feed_distance));
-  feeder_feed_command = String(String(nudger_axis) + String(feeder_feed_distance));
+  feeder_feed_command = String(String(nudger_axis) + String(feeder_feed_distance) + String(takeaway_axis) + String(feeder_feed_distance));
   takeaway_feed_command = String(String(takeaway_axis) + String(takeaway_feed_distance));
   motor_speed_command = String("F" + String(motor_speed));
-   
+  
   // Check whether or not to lock the motors when not running - probably only useful for FAR
   if (motor_lock) {
-    Serial1.println("$1=0");
-  } else {
     Serial1.println("$1=255");
+  } else {
+    Serial1.println("$1=0");
   }
 
   // Set feeder into relative mode
@@ -117,11 +121,22 @@ void raise_stack() {
   /**
    * Raise the stack by a set amount, but also check if it needs further raising in order to fully engage the nudger.
    */
+  delay(200);
   Serial1.println(elevator_feed_command);
   nudger_switch_status = digitalRead(nudger_switch_pin);
-  while (nudger_switch_status == 0) {
+  float raised_distance = 0.;
+  Serial.print("Nudger switch status: ");
+  Serial.println(nudger_switch_status);
+  while ((nudger_switch_status == nudger_switch_down) && (raised_distance < max_raised_distance)) {
+    raised_distance = raised_distance + elevator_feed_distance;
     Serial1.println(elevator_feed_command);
     delay(50);
+    Serial.println("Raising elevator to engage nudger...");
+    nudger_switch_status = digitalRead(nudger_switch_pin);
+  }
+
+  if (nudger_switch_status == nudger_switch_down) {
+    Serial.println("Error! No sheets detected by nudger!");
   }
 }
 
@@ -141,10 +156,11 @@ void acquire_sheet() {
   /**
    * acquire a sheet into the retard nip, raise elevator if necessary
    */
-  drive_nudger(UP);
-  raise_stack();
   drive_nudger(DOWN);
+  raise_stack();
   Serial1.println(nudger_feed_command);
+  delay(500);
+  drive_nudger(UP);
 }
 
 void feed_takeaway_sheet() {
@@ -172,8 +188,10 @@ void sheet_feed_control() {
   while (!Serial.available()) {}
 
   int readByte = Serial.read();
-
+  Serial.print("Received: ");
+  Serial.println(readByte);
   if (readByte == feed_sheet_command) {
+    Serial.println("Moving sheet");
     move_sheet();
   }
 }
