@@ -41,7 +41,7 @@ class SAR(object):
             os.mkdir(self.config["TEST_RESULTS_DIRECTORY"])
 
     def initialize_serial(self):
-        """Initialize serial connections"""
+        """Initialize serial connections."""
         try:
             self.serial = serial.Serial(self.config["MOTOR_SERIAL_PORT"], 115200)
         except serial.SerialException:
@@ -161,6 +161,17 @@ class SAR(object):
         except Exception as e:
             print(e)
             self.shut_down()
+
+        # Record performance data as percentages (for easier parsing of results
+        # json). Not using Counter approach even though it is faster because it
+        # doesn't matter for these sheet feed numbers.
+        collated_results = list(self.test_data['sheet_data'].values())
+        self.test_data['total_sheets_fed'] = len(collated_results)
+        self.test_data['percentage_successful'] = collated_results.count('1')
+        self.test_data['percentage_multifeed'] = collated_results.count('2')
+        self.test_data['percentage_misfeed'] = collated_results.count('3')
+        self.test_data['percentage_sheet_damage'] = collated_results.count('4')
+
         # Collect any extra notes (sheet processing conditions, strange events,
         # manual changes, etc.)
         notes = input("Write down any other notes, press Enter when done...")
@@ -170,7 +181,7 @@ class SAR(object):
         self.shut_down()
 
     def move_elevator(self, z=-5):
-        """Move the elevator stage down by some amount"""
+        """Move the elevator stage down by some amount."""
         self.execute_gshield_command("g1{}{}".format(self.config["ELEVATOR_AXIS"], z))
 
 if __name__ == '__main__':
